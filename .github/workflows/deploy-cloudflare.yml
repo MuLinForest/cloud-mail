@@ -245,13 +245,14 @@ jobs:
           echo "🛠️ Starting database initialization..."
           sleep 15
           
-          WORKER_URL="${{ steps.deploy.outputs.worker_url }}"
-          WORKER_URL="${WORKER_URL:-${CUSTOM_DOMAIN:+https://$CUSTOM_DOMAIN}}"
+          WORKER_URL="https://${NAME}.${CLOUDFLARE_ACCOUNT_ID}.workers.dev"
           
           if [ -z "$WORKER_URL" ]; then
             echo "❌ Preview URL not available. Please set CUSTOM_DOMAIN."
             exit 1
           fi
+          
+          echo "::add-mask::$WORKER_URL"
           
           HTTP_CODE=$(curl -sL -w "%{http_code}" -o response.txt "$WORKER_URL/api/init/${JWT_SECRET}")
           RESPONSE_BODY=$(cat response.txt)
