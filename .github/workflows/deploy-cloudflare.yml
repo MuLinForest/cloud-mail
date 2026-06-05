@@ -241,25 +241,43 @@ jobs:
           echo "✅ Setup completed."
 
       - name: ♻️ 初始化数据库 / Initialize database
-        continue-on-error: true
         run: |
-          echo "🛠️ Starting database initialization..."
-          sleep 15
+          echo "🔓 啟用 workers.dev 路由..."
+          ENABLE_RESULT=$(curl -sS -X POST \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"enabled": true}' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$NAME/subdomain")
           
-          WORKER_URL="${CUSTOM_DOMAIN:+https://$CUSTOM_DOMAIN}"
-          
-          if [ -z "$WORKER_URL" ]; then
-            echo "❌ Preview URL not available. Please set CUSTOM_DOMAIN."
+          if ! echo "$ENABLE_RESULT" | jq -e '.success == true' > /dev/null 2>&1; then
+            echo "❌ 啟用 workers.dev 失敗：$ENABLE_RESULT"
             exit 1
           fi
+          echo "✅ workers.dev 路由已啟用"
           
-          HTTP_CODE=$(curl -sL -w "%{http_code}" -o response.txt "$WORKER_URL/api/init/${JWT_SECRET}")
+          echo "⏳ 等待路由生效..."
+          sleep 10
+          
+          INIT_URL="https://$NAME.${{ vars.CLOUDFLARE_SUBDOMAIN || 'mulin-83b' }}.workers.dev/api/init/$JWT_SECRET"
+          echo "::add-mask::$INIT_URL"
+          
+          echo "🛠️ 初始化資料庫..."
+          HTTP_CODE=$(curl -sL -w "%{http_code}" -o response.txt "$INIT_URL")
           RESPONSE_BODY=$(cat response.txt)
-
+          
+          echo "🔒 關閉 workers.dev 路由..."
+          curl -sS -X POST \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"enabled": false}' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$NAME/subdomain" \
+            || echo "⚠️ 關閉 workers.dev 失敗，請手動關閉"
+          
           if [ "$RESPONSE_BODY" = "success" ]; then
-            echo "✅ Setup completed."
+            echo "✅ 初始化完成"
           else
-            echo "⚠️ 初始化失败（HTTP $HTTP_CODE），部署已完成。請手動 curl $WORKER_URL/api/init/ 初始化資料庫"
+            echo "❌ 初始化失敗（HTTP $HTTP_CODE，回應：$RESPONSE_BODY）"
+            exit 1
           fi
 
       - name: 🗑️ 删除运行记录 / Delete workflow runs
