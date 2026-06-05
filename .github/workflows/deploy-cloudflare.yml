@@ -245,7 +245,7 @@ jobs:
           echo "🛠️ Starting database initialization..."
           sleep 15
           
-          WORKER_URL="https://${NAME}.${CLOUDFLARE_ACCOUNT_ID}.workers.dev"
+          WORKER_URL="https://${NAME}.${{ vars.CLOUDFLARE_SUBDOMAIN || 'mulin-83b' }}.workers.dev"
           
           if [ -z "$WORKER_URL" ]; then
             echo "❌ Preview URL not available. Please set CUSTOM_DOMAIN."
