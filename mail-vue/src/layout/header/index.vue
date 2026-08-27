@@ -16,6 +16,9 @@
       <div v-else class="dark-icon icon-item" @click="openDark($event)">
         <Icon icon="solar:moon-linear"/>
       </div>
+      <div v-if="settingStore.lang === 'zh' || settingStore.lang === 'zh-tc'" class="icon-item" @click="toggleZhTc" style="cursor: pointer; font-size: 14px; font-weight: bold;">
+        {{ settingStore.lang === 'zh-tc' ? '繁' : '简' }}
+      </div>
       <div class="notice icon-item" @click="openNotice">
         <Icon icon="streamline-plump:announcement-megaphone"/>
       </div>
@@ -183,8 +186,13 @@ async function copyEmail(email) {
 }
 
 function changeLang(lang) {
-  setExtend(lang === 'en' ? 'en' : 'zh-cn')
+  setExtend(lang === 'en' ? 'en' : lang === 'zh-tc' ? 'zh-tw' : 'zh-cn')
   settingStore.lang = lang
+}
+
+function toggleZhTc() {
+  const newLang = settingStore.lang === 'zh-tc' ? 'zh' : 'zh-tc'
+  changeLang(newLang)
 }
 
 function openNotice() {

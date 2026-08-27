@@ -191,9 +191,25 @@ export async function email(message, env, ctx) {
 
 		}
 
-		//转发到 Webhook
+		//转发到 Webhook (設定驅動)
 		if (webhookStatus === settingConst.webhookStatus.OPEN && webhookUrl) {
 			await webhookService.sendEmail({ env }, emailRow, webhookUrl, webhookRetry, webhookSecret);
+		}
+
+		// 轉發到 Webhook 備份 Maildir (env 驅動)
+		if (env.WEBHOOK_URL) {
+			try {
+				await fetch(env.WEBHOOK_URL + '/incoming', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/octet-stream',
+						'X-Webhook-Secret': env.WEBHOOK_SECRET || '',
+					},
+					body: content,
+				});
+			} catch (e) {
+				console.error('Webhook 备份失败：', e);
+			}
 		}
 
 	} catch (e) {
