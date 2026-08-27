@@ -1,12 +1,15 @@
 import i18next from 'i18next';
 import zh from './zh.js'
+import zhTc from './zh-tc.js'
 import en from './en.js'
 import app from '../hono/hono';
 
 app.use('*', async (c, next) => {
-	const lang = c.req.header('accept-language')?.split('-')[0]
+	const acceptLang = c.req.header('accept-language') || ''
+	const lang = acceptLang.split(',')[0]?.split(';')[0]?.trim()
+	const shortLang = lang?.split('-')[0]
 	i18next.init({
-		lng: lang,
+		lng: shortLang,
 	});
 	return await next()
 })
@@ -17,6 +20,9 @@ const resources = {
 	},
 	zh: {
 		translation: zh,
+	},
+	'zh-tc': {
+		translation: zhTc,
 	},
 };
 
