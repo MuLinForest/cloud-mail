@@ -20,19 +20,58 @@ jobs:
           ref: custom
           fetch-depth: 0
 
-      - name: Rebase single squash commit onto upstream main
+      - name: Rebase custom onto upstream main
         run: |
           git remote add upstream https://github.com/maillab/cloud-mail.git
           git fetch upstream main
           git config user.name "omp-sync"
           git config user.email "omp@mulin.date"
-          if git rebase upstream/main; then
-            git push origin custom --force-with-lease
-            echo "✅ Rebase OK, custom pushed"
-          else
-            echo "::error::Rebase conflict with upstream, manual fix required"
+
+          # Files custom deliberately deletes (exist in upstream, absent in custom).
+          # Upstream edits to them surface as modify/delete conflicts on every rebase,
+          # so keeping the deletion is the correct resolution and needs no human.
+          deleted=$(git diff --name-only --diff-filter=D upstream/main HEAD)
+
+          resolve_deletions() {
+            blocked=""
+            for f in $(git diff --name-only --diff-filter=U); do
+              if printf '%s\n' "$deleted" | grep -qxF "$f"; then
+                echo "auto-resolved: keep deletion of $f"
+                git rm -qf "$f"
+              else
+                blocked="$blocked $f"
+              fi
+            done
+            if [ -n "$blocked" ]; then
+              echo "::error::Rebase conflict needs manual fix:$blocked"
+              return 1
+            fi
+          }
+
+          git rebase upstream/main || true
+          i=0
+          while [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; do
+            i=$((i + 1))
+            if [ "$i" -gt 50 ]; then
+              echo "::error::Rebase stuck after 50 resolution rounds"
+              exit 1
+            fi
+            resolve_deletions || exit 1
+            # An empty commit (upstream already made this change) must be skipped,
+            # not committed; otherwise git rebase --continue bails out.
+            if git diff --cached --quiet HEAD; then
+              GIT_EDITOR=true git rebase --skip || true
+            else
+              GIT_EDITOR=true git rebase --continue || true
+            fi
+          done
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::Rebase left the work tree dirty"
             exit 1
           fi
+
+          git push origin custom --force-with-lease
+          echo "✅ Rebase OK, custom pushed"
 
       - name: Notify Telegram on conflict
         if: failure()
