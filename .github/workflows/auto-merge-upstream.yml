@@ -22,6 +22,14 @@ jobs:
 
       - name: Rebase custom onto upstream main
         run: |
+          # 失敗原因寫進檔案, 讓後面的 Telegram step 讀得到(不靠解析 log)
+          reason_file="$RUNNER_TEMP/fail-reason.txt"
+          fail() {
+            printf '%s' "$1" > "$reason_file"
+            echo "::error::$1"
+            exit 1
+          }
+
           git remote add upstream https://github.com/maillab/cloud-mail.git
           git fetch upstream main
           git config user.name "omp-sync"
@@ -43,8 +51,7 @@ jobs:
               fi
             done
             if [ -n "$blocked" ]; then
-              echo "::error::Rebase conflict needs manual fix:$blocked"
-              return 1
+              fail "rebase 衝突需人工處理:$blocked"
             fi
           }
 
@@ -53,10 +60,9 @@ jobs:
           while [ -d .git/rebase-merge ] || [ -d .git/rebase-apply ]; do
             i=$((i + 1))
             if [ "$i" -gt 50 ]; then
-              echo "::error::Rebase stuck after 50 resolution rounds"
-              exit 1
+              fail "rebase 連續 50 輪仍無法收斂(疑似衝突反覆出現)"
             fi
-            resolve_deletions || exit 1
+            resolve_deletions
             # An empty commit (upstream already made this change) must be skipped,
             # not committed; otherwise git rebase --continue bails out.
             if git diff --cached --quiet HEAD; then
@@ -66,17 +72,62 @@ jobs:
             fi
           done
           if [ -n "$(git status --porcelain)" ]; then
-            echo "::error::Rebase left the work tree dirty"
-            exit 1
+            fail "rebase 結束後 work tree 仍有未提交變更"
           fi
 
-          git push origin custom --force-with-lease
+          git push origin custom --force-with-lease \
+            || fail "force-with-lease push 被拒(custom 已被其他人更新)"
           echo "✅ Rebase OK, custom pushed"
 
       - name: Notify Telegram on conflict
         if: failure()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TG_THREAD: ${{ secrets.TELEGRAM_THREAD_ID }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          curl -s -f -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d text="⚠️ cloud-mail 自動合併失敗(與上游衝突),需要人工修復 custom 分支" \
-            || echo "Telegram notification failed (no token or chat id)"
+          reason=""
+          if [ -f "$RUNNER_TEMP/fail-reason.txt" ]; then
+            reason=$(cat "$RUNNER_TEMP/fail-reason.txt")
+          fi
+          if [ -z "$reason" ]; then
+            reason="rebase 步驟異常結束(見 run 連結的 log)"
+          fi
+          reason=${reason:0:900}
+
+          text="⚠️ cloud-mail 自動合併失敗
+          原因：$reason
+          分支：custom(上游 maillab/cloud-mail)
+          Run：$RUN_URL"
+
+          send_msg() {
+            local thread="$1"
+            local code
+            local args=(--data-urlencode "chat_id=$TG_CHAT" --data-urlencode "text=$text")
+            if [ -n "$thread" ]; then
+              args+=(--data-urlencode "message_thread_id=$thread")
+            fi
+            code=$(curl -s -m 15 -o "$RUNNER_TEMP/tg-resp.json" -w '%{http_code}' \
+              -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" "${args[@]}" \
+              --data-urlencode 'link_preview_options={"is_disabled":true}')
+            if [ "$code" = "200" ]; then
+              return 0
+            fi
+            echo "Telegram HTTP $code: $(cat "$RUNNER_TEMP/tg-resp.json" 2>/dev/null)"
+            return 1
+          }
+
+          delivered=0
+          if [ -n "${TG_THREAD:-}" ] && send_msg "$TG_THREAD"; then
+            delivered=1
+          elif [ -n "${TG_THREAD:-}" ]; then
+            echo "::warning::主題 $TG_THREAD 傳送失敗,改送主聊天"
+          fi
+          if [ "$delivered" -eq 0 ] && send_msg ""; then
+            delivered=1
+          fi
+          if [ "$delivered" -eq 0 ]; then
+            echo "::error::Telegram 通知完全失敗(token/chat id 未設或 API 拒絕)"
+            exit 1
+          fi
