@@ -6,19 +6,18 @@ keep_vars = true
 [observability]
 enabled = true
 
-# Workers Builds 部屬使用(wrangler deploy 以設定檔為準,無 binding 會移除 dashboard 綁定)
-[[d1_databases]]
-binding = "db"
-database_name = "cloud-mail-db"
-database_id = "f00b6473-25b1-47c2-95ed-139d2bf41bc6"
+#[[d1_databases]]
+#binding = "db"			# D1 binding name; do not change
+#database_name = ""		# D1 database name
+#database_id = ""		# D1 database id
 
-[[kv_namespaces]]
-binding = "kv"
-id = "9357cf6d34ef48ef9bb5fe31162f634f"
+#[[kv_namespaces]]
+#binding = "kv"			# KV binding name; do not change
+#id = ""					# KV namespace id
 
-[[r2_buckets]]
-binding = "r2"
-bucket_name = "cloud-mail-r2"
+#[[r2_buckets]]
+#binding = "r2"			# R2 binding name; do not change
+#bucket_name = ""		# R2 bucket name
 
 #[[send_email]]
 #name = "email"			# Cloudflare Email Sending; used first if configured
@@ -58,3 +57,21 @@ new_sqlite_classes = ["MailHub"]
 
 [build]
 command = "pnpm --prefix ../mail-vue install && pnpm --prefix ../mail-vue run build"
+
+# ─── custom: Workers Builds 部署用的真實 binding ───
+# 放在檔案最尾端是刻意的：上方區塊與上游保持 byte-identical，
+# 上游改 wrangler.toml 就不會在 rebase 時撞車（過去 6 個月撞了 3 次）。
+# wrangler deploy 以設定檔為準，這裡若缺 binding，dashboard 上的綁定會被移除。
+
+[[d1_databases]]
+binding = "db"
+database_name = "cloud-mail-db"
+database_id = "f00b6473-25b1-47c2-95ed-139d2bf41bc6"
+
+[[kv_namespaces]]
+binding = "kv"
+id = "9357cf6d34ef48ef9bb5fe31162f634f"
+
+[[r2_buckets]]
+binding = "r2"
+bucket_name = "cloud-mail-r2"
